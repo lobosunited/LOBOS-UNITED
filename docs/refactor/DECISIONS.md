@@ -2,7 +2,7 @@
 
 - Work in the existing Atlas checkout on `codex/atlas-local-first-20260905` → preserve the pre-existing uncommitted CMS removal → no changes to the parent website or its deployment.
 - React + Vite + strict TypeScript → map application state and standalone static hosting → replace Astro shell/config, retain useful typed algorithms and assets.
-- Leaflet CRS.Simple adapter → maintained keyboard/touch/drag lifecycle with exact GTADB game coordinates → reuse calibrated basemap, no geographical reprojection, no external tiles. Existing SVG engine stays with optional 3D.
+- Leaflet CRS.Simple adapter → maintained keyboard/touch/drag lifecycle with exact GTADB game coordinates → reuse calibrated basemap, no geographical reprojection, no external tiles. The static SVG basemap remains the map source.
 - Zustand stores by responsibility → targeted subscriptions, no viewport rerenders of the entire app → domain/UI/map/user/persistence remain distinct.
 - Dexie IndexedDB repositories → durable structured data, transactions and schema upgrades → local saves precede UI success; no localStorage rich-data fallback that falsely promises persistence.
 - Versioned validated portable backups → protect existing local data → preview before merge, transactional import, unsupported schemas and oversized files rejected.

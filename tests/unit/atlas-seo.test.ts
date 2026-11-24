@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectPath } from "../../src/features/explorer/public-path";
+import { projectPath } from "../../src/app/public-path";
 import { atlasPageMeta, ATLAS_PROJECT_META } from "../../src/app/seo";
 
 describe("Atlas public SEO boundary", () => {

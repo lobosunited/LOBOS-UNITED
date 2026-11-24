@@ -1,8 +1,5 @@
 import type { Place } from "../../domain/types";
-import {
-  REVIEWED_GTADB_ANCHORS,
-  type StreetLeonidaRegionSlug,
-} from "./leonida-evidence";
+import type { AtlasRegionSlug } from '../../data/region-types';
 
 export interface ResearchSource {
   readonly id: string;
@@ -15,13 +12,12 @@ export interface ResearchSource {
 
 export interface RegionDiscovery {
   readonly id: string;
-  readonly region: StreetLeonidaRegionSlug;
+  readonly region: AtlasRegionSlug;
   readonly title: string;
   readonly summary: string;
   readonly sourceIds: readonly string[];
   /** A regional observation is never a new map coordinate or a promise of a modeled POI. */
   readonly placement: "UNPOSITIONED";
-  readonly travelRegion: StreetLeonidaRegionSlug;
 }
 
 export const RESEARCH_REVIEWED_AT = "2026-09-06";
@@ -166,13 +162,13 @@ export const RESEARCH_REGIONS = Object.freeze([
       "A northern wilderness with off-road trails, shaded streams, wildlife and kayaking in Rockstar’s public material.",
   },
 ] as const satisfies readonly {
-  readonly slug: StreetLeonidaRegionSlug;
+  readonly slug: AtlasRegionSlug;
   readonly name: string;
   readonly summary: string;
 }[]);
 
 function discovery(
-  region: StreetLeonidaRegionSlug,
+  region: AtlasRegionSlug,
   id: string,
   title: string,
   summary: string,
@@ -185,7 +181,6 @@ function discovery(
     summary,
     sourceIds: Object.freeze(sourceIds),
     placement: "UNPOSITIONED",
-    travelRegion: region,
   });
 }
 
@@ -301,24 +296,21 @@ export const REGION_DISCOVERIES: readonly RegionDiscovery[] = Object.freeze([
 ]);
 
 export function getRegionDiscoveries(
-  slug: StreetLeonidaRegionSlug,
+  slug: AtlasRegionSlug,
 ): readonly RegionDiscovery[] {
   return REGION_DISCOVERIES.filter((discovery) => discovery.region === slug);
 }
 
-export function getResearchForPlace(place: Pick<Place, "id" | "evidence">) {
+export function getResearchForPlace(
+  place: Pick<Place, "id" | "evidence"> & Partial<Pick<Place, "region">>,
+) {
   if (place.evidence !== "approximate") return null;
   const directRegion = RESEARCH_REGIONS.find(
     (region) => place.id === `region:${region.slug}`,
   );
-  const anchor = Object.hasOwn(REVIEWED_GTADB_ANCHORS, place.id)
-    ? REVIEWED_GTADB_ANCHORS[place.id as keyof typeof REVIEWED_GTADB_ANCHORS]
-    : null;
-  const region =
-    directRegion ??
-    (anchor?.confidence === "SUPPORTED"
-      ? RESEARCH_REGIONS.find((region) => region.slug === anchor.region)
-      : undefined);
+  const region = directRegion ?? RESEARCH_REGIONS.find(
+    (item) => item.name.toLocaleLowerCase() === place.region?.trim().toLocaleLowerCase(),
+  );
   return region
     ? { region, discoveries: getRegionDiscoveries(region.slug) }
     : null;

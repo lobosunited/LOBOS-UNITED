@@ -8,7 +8,7 @@ import type {
   PlaceNote,
   Preferences,
 } from '../domain/types';
-import { CANONICAL_BOUNDS } from '../features/street-leonida/leonida-coordinates';
+import { CANONICAL_BOUNDS } from '../features/map/coordinates';
 
 /** The file picker should check this before reading or JSON-parsing a file. */
 export const MAX_BACKUP_BYTES = 10 * 1024 * 1024;

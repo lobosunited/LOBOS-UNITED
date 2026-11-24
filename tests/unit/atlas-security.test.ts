@@ -32,7 +32,7 @@ async function fixture() {
     'favicon.svg': '<svg/>',
     'assets/app-test.js': 'console.log("public app")',
     'assets/app-test.css': 'body{color:black}',
-    'assets/walk-world-test.js': 'console.log("optional 3D")',
+    'assets/street-leonida/maps/optional-tile.jpg': 'optional map tile',
     'assets/gta6-leonida-atlas/basemap.svg': '<svg><title>Original</title></svg>',
     'assets/street-leonida/maps/gtadb-landmarks-5c1d69f.json': '{"landmarks":[]}',
   };
@@ -166,7 +166,7 @@ describe('generated service worker privacy and availability', () => {
     'returns %s responses without storing them',
     async (cacheControl) => {
       const harness = workerHarness(worker, { cacheControl });
-      const response = await harness.dispatch('/atlas/assets/street-leonida/textures/test.jpg');
+      const response = await harness.dispatch('/atlas/assets/street-leonida/maps/test.jpg');
       expect(await response?.text()).toBe('Public network content');
       expect(harness.cachedUrls).toEqual([]);
     },
@@ -176,7 +176,7 @@ describe('generated service worker privacy and availability', () => {
     'preserves network availability when browser caching fails: %j',
     async (options) => {
       const harness = workerHarness(worker, options);
-      const response = await harness.dispatch('/atlas/assets/street-leonida/textures/test.jpg');
+      const response = await harness.dispatch('/atlas/assets/street-leonida/maps/test.jpg');
       expect(await response?.text()).toBe('Public network content');
       expect(harness.fetches).toHaveLength(1);
     },
@@ -189,13 +189,13 @@ describe('generated service worker privacy and availability', () => {
     expect(harness.cachedUrls).toEqual([]);
   });
 
-  it('caches the optional 3D script only after the first request', async () => {
+  it('caches optional map tiles only after the first request', async () => {
     const harness = workerHarness(worker);
     expect(worker.split('\n').find((line) => line.startsWith('const CORE='))).not.toContain(
-      '/atlas/assets/walk-world-test.js',
+      '/atlas/assets/street-leonida/maps/optional-tile.jpg',
     );
-    await harness.dispatch('/atlas/assets/walk-world-test.js');
-    expect(harness.cachedUrls).toEqual([origin + '/atlas/assets/walk-world-test.js']);
+    await harness.dispatch('/atlas/assets/street-leonida/maps/optional-tile.jpg');
+    expect(harness.cachedUrls).toEqual([origin + '/atlas/assets/street-leonida/maps/optional-tile.jpg']);
   });
 
   it('caches public assets and changes the cache when only basemap bytes change', async () => {

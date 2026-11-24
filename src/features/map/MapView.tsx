@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
+import { Moon, Pencil, Route, Ruler, Sun, X } from 'lucide-react';
 import type { LayerDefinition, Place, Position, Preferences } from '../../domain/types';
 import {
   BASEMAP_BOUNDS,
@@ -41,30 +42,43 @@ function markerIcon(
   selected: boolean,
 ): L.DivIcon {
   const cluster = group.places.length > 1;
+  const place = group.places[0];
   const content = document.createElement('span');
   content.className = cluster ? 'atlas-cluster-face' : 'atlas-pin-face';
   content.style.setProperty('--pin-color', layer?.style.color ?? '#73cbbb');
   content.setAttribute('aria-hidden', 'true');
+
+  const symbols: Record<string, string> = {
+    region: '\u25C6',
+    landmark: '\u25C7',
+    nature: '\u2663',
+    transport: '\u25B2',
+    business: '\u25A0',
+    personal: '\u2605',
+  };
+
   content.textContent = cluster
     ? group.places.length.toLocaleString()
-    : group.places[0]?.layerId === 'personal'
-      ? group.places[0].tags.includes('star')
-        ? '★'
-        : group.places[0].tags.includes('flag')
-          ? '⚑'
-          : '•'
-      : group.places[0]?.layerId === 'uncertain'
+    : place?.layerId === 'personal'
+      ? place.tags.includes('star')
+        ? '\u2605'
+        : place.tags.includes('flag')
+          ? '\u2691'
+          : '\u2022'
+      : place?.layerId === 'uncertain'
         ? '?'
-        : '•';
-  const size = cluster ? 38 : Math.max(24, (layer?.style.radius ?? 6) * 2 + 10);
+        : symbols[place?.category ?? 'landmark'] ?? '\u2022';
+
+  const size = cluster ? 38 : Math.max(26, (layer?.style.radius ?? 6) * 2 + 10);
+  const categoryClass = !cluster && place ? `is-${place.category}` : '';
+
   return L.divIcon({
     html: content,
-    className: `atlas-map-marker ${cluster ? 'is-cluster' : ''} ${selected ? 'is-selected' : ''} ${group.places[0]?.layerId === 'regions' ? 'is-region' : ''}`,
+    className: `atlas-map-marker ${cluster ? 'is-cluster' : ''} ${selected ? 'is-selected' : ''} ${place?.layerId === 'regions' ? 'is-region' : ''} ${categoryClass}`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
 }
-
 export default function MapView(props: MapViewProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const callbacks = useRef(props);
@@ -74,6 +88,13 @@ export default function MapView(props: MapViewProps) {
   const [previewPosition, setPreviewPosition] = useState<Position | null>(null);
   const [placementMessage, setPlacementMessage] = useState('');
   const [zoom, setZoom] = useState(-5);
+  const [tool, setTool] = useState<'none' | 'measure' | 'route' | 'draw'>('none');
+  const [toolPoints, setToolPoints] = useState<Position[]>([]);
+  const [nightMode, setNightMode] = useState(() => {
+    try { return localStorage.getItem('lobos-map-night') === 'true'; } catch { return false; }
+  });
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
   const [counts, setCounts] = useState({ places: 0, groups: 0, groupedForPerformance: false });
   const descriptionId = useId();
   const index = useMemo(() => buildSpatialIndex(props.places), [props.places]);
@@ -127,6 +148,69 @@ export default function MapView(props: MapViewProps) {
         ),
       );
       overlay.on('load', () => setMapError(null));
+      // LOBOS GTADB DETAIL LAYER
+      const detailOverlays = new Map<string, L.ImageOverlay>();
+      const detailZoomThreshold = 0;
+
+      const refreshDetailTiles = () => {
+        if (activeMap.getZoom() < detailZoomThreshold) {
+          detailOverlays.forEach((layer) => activeMap.removeLayer(layer));
+          detailOverlays.clear();
+          return;
+        }
+
+        const visibleBounds = activeMap.getBounds().pad(0.15);
+        const basePath = base.endsWith('/') ? base : base + '/';
+        const wanted = new Set<string>();
+
+        for (let y = 21; y <= 95; y += 8) {
+          for (let x = 21; x <= 79; x += 8) {
+            const columns = Math.min(8, 80 - x);
+            const rows = Math.min(8, 96 - y);
+
+            const west = -16384 + x * 256;
+            const north = 16384 - y * 256;
+            const east = west + columns * 256;
+            const south = north - rows * 256;
+
+            const bounds = L.latLngBounds([[south, west], [north, east]]);
+            if (!visibleBounds.intersects(bounds)) continue;
+
+            const key = 'x' + x + '-y' + y;
+            wanted.add(key);
+
+            if (!detailOverlays.has(key)) {
+              const detail = L.imageOverlay(
+                basePath + 'assets/gtadb-original-chunks/' + key + '.jpg',
+                bounds,
+                {
+                  interactive: false,
+                  alt: 'Original GTADB detailed community map',
+                  className: 'atlas-gtadb-detail',
+                  opacity: 1,
+                },
+              );
+
+              detail.on('error', () => {
+                console.warn('LOBOS detail chunk failed to load:', key);
+              });
+
+              detail.addTo(activeMap);
+              detailOverlays.set(key, detail);
+            }
+          }
+        }
+
+        for (const [key, layer] of detailOverlays) {
+          if (!wanted.has(key)) {
+            activeMap.removeLayer(layer);
+            detailOverlays.delete(key);
+          }
+        }
+      };
+
+      activeMap.on('moveend zoomend', refreshDetailTiles);
+      refreshDetailTiles();
       const reportViewport = () => {
         setZoom(activeMap.getZoom());
         callbacks.current.onViewport?.({
@@ -136,6 +220,11 @@ export default function MapView(props: MapViewProps) {
       };
       activeMap.on('moveend zoomend', reportViewport);
       activeMap.on('click', (event: L.LeafletMouseEvent) => {
+        if (toolRef.current !== 'none' && callbacks.current.editorMode === 'none') {
+          const position = fromMapCoordinate(event.latlng);
+          if (isValidPosition(position)) setToolPoints((points) => [...points, position]);
+          return;
+        }
         if (callbacks.current.editorMode === 'none') return;
         const position = fromMapCoordinate(event.latlng);
         if (!isValidPosition(position)) {
@@ -159,6 +248,9 @@ export default function MapView(props: MapViewProps) {
       return () => {
         observer?.disconnect();
         cancelAnimationFrame(resizeFrame);
+        activeMap.off('moveend zoomend', refreshDetailTiles);
+        detailOverlays.forEach((layer) => activeMap.removeLayer(layer));
+        detailOverlays.clear();
         overlay.off();
         activeMap.off('moveend zoomend', reportViewport);
         // Leaflet 1.9's uncancellable 250ms zoom fallback can outlive remove().
@@ -181,6 +273,20 @@ export default function MapView(props: MapViewProps) {
   }, [attempt]);
 
   useEffect(() => {
+    if (!map || toolPoints.length === 0) return;
+    const points = toolPoints.map(toMapCoordinate);
+    const color = tool === 'route' ? '#ef9a46' : tool === 'measure' ? '#8a7df0' : '#49c6b0';
+    const line = L.polyline(points, { color, weight: 4, opacity: 0.9, dashArray: tool === 'draw' ? '8 6' : undefined }).addTo(map);
+    const dots = toolPoints.map((point, index) =>
+      L.circleMarker(toMapCoordinate(point), {
+        radius: index === 0 || index === toolPoints.length - 1 ? 6 : 4,
+        color: '#fff', weight: 2, fillColor: color, fillOpacity: 1,
+      }).addTo(map),
+    );
+    return () => { line.remove(); dots.forEach((dot) => dot.remove()); };
+  }, [map, toolPoints, tool]);
+
+  useEffect(() => {
     if (!map) return;
     const markerGroup = L.layerGroup().addTo(map);
     const layersById = new Map(props.layers.map((layer) => [layer.id, layer]));
@@ -197,9 +303,10 @@ export default function MapView(props: MapViewProps) {
       }).filter((place) => {
         const layer = layersById.get(place.layerId);
         return (
-          layer?.visible &&
-          (layer.minZoom === undefined || currentZoom >= layer.minZoom) &&
-          (layer.maxZoom === undefined || currentZoom <= layer.maxZoom)
+          place.id === props.selectedId ||
+          (layer?.visible &&
+            (layer.minZoom === undefined || currentZoom >= layer.minZoom) &&
+            (layer.maxZoom === undefined || currentZoom <= layer.maxZoom))
         );
       });
       const groups = clusterPlaces(visible, {
@@ -438,12 +545,36 @@ export default function MapView(props: MapViewProps) {
       </p>
       <div
         ref={hostRef}
-        className="atlas-map-canvas"
+        className={`atlas-map-canvas ${nightMode ? 'is-night' : ''} ${tool !== 'none' ? 'is-map-tool-active' : ''}`}
         role="region"
         aria-label="Leonida interactive map"
         aria-describedby={descriptionId}
         tabIndex={0}
       />
+      <div className="atlas-map-tools" role="toolbar" aria-label="Map tools">
+        <button type="button" aria-pressed={tool === 'measure'} onClick={() => { setTool(tool === 'measure' ? 'none' : 'measure'); setToolPoints([]); }} title="Measure straight-line distance">
+          <Ruler size={17} /><span>Measure</span>
+        </button>
+        <button type="button" aria-pressed={tool === 'route'} onClick={() => { setTool(tool === 'route' ? 'none' : 'route'); setToolPoints([]); }} title="Plot a route by placing map points">
+          <Route size={17} /><span>Route</span>
+        </button>
+        <button type="button" aria-pressed={tool === 'draw'} onClick={() => { setTool(tool === 'draw' ? 'none' : 'draw'); setToolPoints([]); }} title="Draw a line on the map">
+          <Pencil size={17} /><span>Draw</span>
+        </button>
+        <button type="button" aria-pressed={nightMode} onClick={() => { const next = !nightMode; setNightMode(next); try { localStorage.setItem('lobos-map-night', String(next)); } catch { /* preference is optional */ } }} title={nightMode ? 'Turn off night map' : 'Turn on night map'}>
+          {nightMode ? <Sun size={17} /> : <Moon size={17} />}<span>{nightMode ? 'Day' : 'Night'}</span>
+        </button>
+      </div>
+      {tool !== 'none' && (
+        <div className="atlas-map-tool-status" role="status">
+          <strong>{tool === 'measure' ? 'Distance measure' : tool === 'route' ? 'Route planner' : 'Map drawing'}</strong>
+          <span>{toolPoints.length < 2 ? 'Click the map to add points' : `${toolPoints.length} points · ${toolPoints.slice(1).reduce((total, point, index) => total + Math.hypot(point.x - toolPoints[index]!.x, point.y - toolPoints[index]!.y), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} game units`}</span>
+          {toolPoints.length > 0 && <button type="button" onClick={() => setToolPoints((points) => points.slice(0, -1))} aria-label="Undo last point">Undo</button>}
+          {toolPoints.length > 0 && <button type="button" onClick={() => setToolPoints([])}>Clear</button>}
+          <button type="button" onClick={() => setTool('none')} aria-label="Close map tool"><X size={15} /></button>
+          {tool === 'route' && <small>Direct point-to-point estimate; road routing is unavailable.</small>}
+        </div>
+      )}
       {props.editorMode !== 'none' ? (
         <div className="atlas-map-editor-hint">
           <button type="button" onClick={useMapCenter}>
@@ -463,6 +594,9 @@ export default function MapView(props: MapViewProps) {
         </div>
       ) : null}
       <div className="atlas-map-navigation" aria-label="Map navigation">
+        <span className="atlas-map-zoom-readout" aria-live="polite">
+          ZOOM <strong>{zoom.toFixed(2)}</strong>
+        </span>
         <button
           type="button"
           aria-label="Zoom in"

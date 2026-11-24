@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { catalogueFromSnapshot } from "../../src/data/catalogue";
 import { filterPlaces } from "../../src/domain/filter";
-import ExplorerView from "../../src/features/explorer/ExplorerView";
 import RegionalResearch from "../../src/features/library/RegionalResearch";
 import {
   getResearchForPlace,
@@ -30,10 +29,10 @@ describe("regional source discoveries", () => {
         ?.region.slug,
     ).toBe("ambrosia");
     expect(
-      getResearchForPlace({ id: "L399", evidence: "approximate" })?.region.slug,
+      getResearchForPlace({ id: "L399", evidence: "approximate", region: "Ambrosia" })?.region.slug,
     ).toBe("ambrosia");
     expect(
-      getResearchForPlace({ id: "L530", evidence: "approximate" })?.region.slug,
+      getResearchForPlace({ id: "L530", evidence: "approximate", region: "Mount Kalaga National Park" })?.region.slug,
     ).toBe("mount-kalaga-national-park");
     expect(
       getResearchForPlace({
@@ -72,7 +71,6 @@ describe("regional source discoveries", () => {
     expect(html).not.toContain("<iframe");
     for (const discovery of getRegionDiscoveries("leonida-keys")) {
       expect(discovery.placement).toBe("UNPOSITIONED");
-      expect(discovery.travelRegion).toBe("leonida-keys");
       for (const sourceId of discovery.sourceIds) {
         const source = RESEARCH_SOURCES[sourceId];
         expect(source).toBeDefined();
@@ -83,26 +81,12 @@ describe("regional source discoveries", () => {
     }
   });
 
-  it("offers only established region travel actions in the mounted explorer evidence dialog", () => {
+  it("links regional observations to the approximate region on the map", () => {
     const html = renderToStaticMarkup(
-      createElement(ExplorerView, { onClose() {} }),
+      createElement(RegionalResearch, { region: "leonida-keys" }),
     );
-    const evidence =
-      html.split('data-walk-evidence-dialog=""')[1]?.split("</dialog>")[0] ??
-      "";
-    const destinations = [
-      ...evidence.matchAll(/data-walk-region="([^"]+)"/g),
-    ].map((match) => match[1]);
-    expect(destinations.sort()).toEqual([
-      "ambrosia",
-      "grassrivers",
-      "leonida-keys",
-      "mount-kalaga-national-park",
-      "port-gellhorn",
-      "vice-city",
-    ]);
-    expect(evidence).toContain("Explore the region");
-    expect(evidence).not.toContain("data-walk-map-marker");
+    expect(html).toContain('href="/?place=region%3Aleonida-keys"');
+    expect(html).toContain("do not identify a specific coordinate");
   });
 
   it("adds source context without changing any source coordinate or introducing discovery pins", () => {

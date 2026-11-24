@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -17,6 +17,9 @@ const GTADB_RAW_URL = `https://raw.githubusercontent.com/rolux/gtadb.org/${GTADB
 const OUTPUT_PATH = fileURLToPath(
   new URL('../public/assets/street-leonida/maps/gtadb-landmarks-5c1d69f.json', import.meta.url),
 );
+const MAX_RAW_BYTES = 32 * 1024 * 1024;
+const MAX_LANDMARKS = 50_000;
+const MIN_LANDMARKS = 100;
 const UNKNOWN_NAME = /\?/;
 const GTADB_LEVEL_TAG = /^l([1-5])$/i;
 const UNCONFIRMED_TAG = /^un(?:confirmed|comfirmed)$/i;
@@ -115,11 +118,67 @@ function normalizeLandmarks(source) {
   });
 }
 
+function assertRawPayloadSize(rawText) {
+  const bytes = Buffer.byteLength(rawText, 'utf8');
+  if (bytes > MAX_RAW_BYTES) {
+    throw new Error(`GTADB payload exceeds the ${MAX_RAW_BYTES}-byte safety limit.`);
+  }
+}
+
+async function readPreviousCounts() {
+  let previous;
+  try {
+    previous = JSON.parse(await readFile(OUTPUT_PATH, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw new Error('Existing GTADB snapshot is unreadable; refusing to replace it.', {
+      cause: error,
+    });
+  }
+  if (
+    !previous ||
+    !Array.isArray(previous.landmarks) ||
+    !previous.counts ||
+    previous.counts.recordCount !== previous.landmarks.length ||
+    !Number.isSafeInteger(previous.counts.positionedCount) ||
+    previous.counts.positionedCount < 0 ||
+    previous.counts.positionedCount > previous.counts.recordCount
+  ) {
+    throw new Error('Existing GTADB snapshot has an invalid structure; refusing to replace it.');
+  }
+  return previous.counts;
+}
+
+function assertPlausibleLandmarks(landmarks, previousCounts) {
+  if (landmarks.length < MIN_LANDMARKS) {
+    throw new Error(`GTADB snapshot has fewer than ${MIN_LANDMARKS} landmarks; refusing to replace it.`);
+  }
+  if (landmarks.length > MAX_LANDMARKS) {
+    throw new Error(`GTADB snapshot exceeds the ${MAX_LANDMARKS}-landmark safety limit.`);
+  }
+  const positionedCount = landmarks.filter(({ inGameCoordinates }) => inGameCoordinates !== null).length;
+  if (positionedCount === 0) {
+    throw new Error('GTADB snapshot has no positioned landmarks; refusing to replace it.');
+  }
+  if (previousCounts) {
+    const minimumRecords = Math.ceil(previousCounts.recordCount * 0.5);
+    const minimumPositioned = Math.ceil(previousCounts.positionedCount * 0.5);
+    if (landmarks.length < minimumRecords || positionedCount < minimumPositioned) {
+      throw new Error('GTADB snapshot dropped by more than 50% versus the current data; review required.');
+    }
+  }
+}
+
 const response = await globalThis.fetch(GTADB_RAW_URL);
 if (!response.ok)
   throw new Error(`GTADB download failed: ${response.status} ${response.statusText}`);
 
+const contentLength = Number(response.headers.get('content-length'));
+if (Number.isFinite(contentLength) && contentLength > MAX_RAW_BYTES) {
+  throw new Error(`GTADB payload exceeds the ${MAX_RAW_BYTES}-byte safety limit.`);
+}
 const rawText = await response.text();
+assertRawPayloadSize(rawText);
 const actualSha256 = createHash('sha256').update(rawText).digest('hex');
 if (actualSha256 !== GTADB_SNAPSHOT_SHA256) {
   throw new Error(
@@ -128,6 +187,7 @@ if (actualSha256 !== GTADB_SNAPSHOT_SHA256) {
 }
 
 const landmarks = normalizeLandmarks(JSON.parse(rawText));
+assertPlausibleLandmarks(landmarks, await readPreviousCounts());
 const positionedCount = landmarks.filter(
   ({ inGameCoordinates }) => inGameCoordinates !== null,
 ).length;
@@ -155,8 +215,17 @@ const snapshot = {
   landmarks,
 };
 
-await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
-await writeFile(OUTPUT_PATH, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
+  await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
+  const temporaryOutput = `${OUTPUT_PATH}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryOutput, `${JSON.stringify(snapshot, null, 2)}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
+    await rename(temporaryOutput, OUTPUT_PATH);
+  } finally {
+    await rm(temporaryOutput, { force: true });
+  }
 console.log(
   `Saved ${snapshot.counts.recordCount} GTADB landmarks (${snapshot.counts.positionedCount} positioned, ${snapshot.counts.unpositionedCount} unpositioned, ${snapshot.counts.unknownNameCount} unknown names) to ${OUTPUT_PATH}`,
 );

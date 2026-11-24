@@ -26,15 +26,15 @@
 
 ## Welcome to Leonida
 
-Leonida Atlas turns a large community reconstruction into a fast, searchable map you can actually use. Move from the state-wide view to the streets of Vice City, inspect the evidence behind a place, save your own discoveries, or step into the optional 3D explorer.
+Leonida Atlas turns a large community reconstruction into a fast, searchable map you can actually use. Move from the state-wide view to the streets of Vice City, inspect the evidence behind a place and save your own discoveries.
 
 **No account is required. No map key is required. No private backend is required.** Fork it, run it locally and make it your own.
 
-| Discover                                                        | Personalize                                              | Explore                                                                |
+| Discover                                                        | Personalize                                              | Use it anywhere                                                        |
 | --------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Search 3,437 public places and six major regions.               | Save favorites, collections, notes and personal markers. | Switch from the 2D atlas to an approximate 3D reconstruction.          |
-| Filter landmarks, nature, transport, businesses and evidence.   | Export and restore portable, validated backups.          | Use desktop, touch and keyboard navigation.                            |
-| Keep uncertain locations visible without inventing coordinates. | Store rich personal data locally in IndexedDB.           | Reopen the installed experience offline after its first complete load. |
+| Search 3,437 public places and six major regions.               | Save favorites, collections, notes and personal markers. | Use desktop, touch and keyboard navigation.                            |
+| Filter landmarks, nature, transport, businesses and evidence.   | Export and restore portable, validated backups.          | Reopen the installed experience offline after its first complete load. |
+| Keep uncertain locations visible without inventing coordinates. | Store rich personal data locally in IndexedDB.           | Explore sources without an account or private backend.                  |
 
 ## Inside the atlas
 
@@ -43,12 +43,6 @@ Leonida Atlas turns a large community reconstruction into a fast, searchable map
 Select a region, landmark or cluster to reveal its context, source and approximate game coordinates. Add favorites, write private notes and organize places without leaving the map.
 
 [![Vice City place details in Leonida Atlas](docs/screenshots/leonida-atlas-place-details.webp)](https://atlas.zonepedia.com/?place=region%3Avice-city)
-
-### Walk through the community reconstruction
-
-The optional 3D explorer preserves the project's existing reconstructed world. Travel between regions, walk or run through the scene and return to the atlas at any time.
-
-[![Leonida Atlas 3D explorer in Vice City](docs/screenshots/leonida-atlas-3d-explorer.webp)](https://atlas.zonepedia.com/?view=3d)
 
 <div align="center">
 
@@ -110,7 +104,7 @@ Browser storage can still be cleared or evicted. Export a backup periodically an
 
 ## Built for forks and contributions
 
-A public fork includes the complete map, editor, local library, backup flow and optional 3D explorer. It does not need access to the official instance, its users or any private service.
+A public fork includes the complete map, editor, local library and backup flow. It does not need access to the official instance, its users or any private service.
 
 Corrections, accessibility improvements, bug fixes and reviewed public data are welcome:
 
@@ -125,7 +119,7 @@ Suspected vulnerabilities should be reported privately through the process in [S
 <details>
 <summary><strong>Architecture at a glance</strong></summary>
 
-The atlas is a static **Vite + React + strict TypeScript** application. Leaflet renders the fictional coordinate system, Zustand separates domain and UI state, Dexie provides transactional IndexedDB repositories, and Three.js powers the optional 3D explorer.
+The atlas is a static **Vite + React + strict TypeScript** application. Leaflet renders the fictional coordinate system, Zustand separates domain and UI state, and Dexie provides transactional IndexedDB repositories.
 
 ```text
 src/app/                      Application shell and routing
@@ -134,9 +128,8 @@ src/data/                     Validated bundled public catalogue
 src/features/map/             CRS adapter, spatial index, clusters and layer rules
 src/features/library/         Favorites, collections, notes, settings and backups
 src/features/editor/          Personal marker creation and editing
-src/features/explorer/        React adapter for the preserved 3D engine
 src/features/project/         About, documentation, credits and license pages
-src/features/street-leonida/  Evidence, coordinate and 3D reconstruction logic
+src/features/street-leonida/  Community landmarks and source normalization
 src/stores/                   Scoped application state and serialized writes
 src/db/                       IndexedDB repositories, upgrades and validation
 src/plugins/                  Trusted internal module registry
@@ -172,6 +165,8 @@ Read the [production deployment guide](deploy/README.md) for hostname, path and 
 The pinned public catalogue is derived from **GTADB / Map GTA contributors** under **CC BY 4.0**. It currently contains 3,431 GTADB records—3,340 positioned and 91 without coordinates—plus six regional entries.
 
 Stable source IDs and evidence are preserved. Approximate placements are labeled as approximate, and missing geography stays unknown. See the [methodology](docs/METHODOLOGY.md) and [third-party notices](THIRD_PARTY_LICENSES.md).
+
+The independent GTADB and FullSweep refresh schedules, generated manifests, and build-artifact handoff are described in the [community data pipeline guide](docs/community-data-pipelines.md).
 
 ## License
 

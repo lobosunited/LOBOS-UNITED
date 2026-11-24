@@ -5,7 +5,7 @@ import {
   setAnalyticsConsent,
   subscribeAnalyticsConsent,
 } from './analytics';
-import { projectPath } from '../features/explorer/public-path';
+import { projectPath } from './public-path';
 import './analytics-consent.css';
 
 function useConsent() {

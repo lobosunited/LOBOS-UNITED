@@ -29,3 +29,13 @@ exports/
 leonida-atlas-backup-*.json
 .worktrees/
 .superpowers/
+
+# Local research imports, source archives and editor-created safety copies
+/data/database/
+/research_assets/
+/ROCKSTAR_OFFICIAL_ARTWORK/
+/patch-backups/
+*.bak
+*.backup
+*.backup-*
+*.before-*

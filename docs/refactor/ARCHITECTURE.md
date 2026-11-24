@@ -54,8 +54,9 @@ The extension must refresh session identity after login/logout or cross-tab chan
 
 ## Migration inventory
 
-- **Keep:** pinned catalogue and licensed basemap, evidence facets, reversible coordinate transforms, 3D world/region/material algorithms and meaningful algorithm tests.
-- **Refactor:** 3D lifecycle into a lazy React adapter, base-aware public URLs, original project content and historical routes, shell/accessibility tests.
+- **Keep:** pinned catalogue and licensed basemap, evidence facets, reversible coordinate transforms, the Leaflet map and meaningful algorithm tests.
+- **Completed and removed:** the 3D world, its region/material algorithms, assets and tests.
+- **Refactor:** base-aware public URLs, original project content and historical routes, shell/accessibility tests.
 - **Replace:** Astro shell/build/layouts with Vite+React, modal-only map with permanent Leaflet feature, single shared mutable UI with scoped stores.
 - **Add:** Dexie versioned local data, typed domain, map/editor/library interfaces, validated backup merge, trusted extension points, optional isolated analytics, offline worker, independent container and fork regression script.
 - **Delete:** obsolete Astro components/styles/config, unused parent SEO/URL/content helpers and old API utilities. Pre-existing CMS-removal changes were preserved.

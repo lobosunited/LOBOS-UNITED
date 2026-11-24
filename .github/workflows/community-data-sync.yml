@@ -1,0 +1,43 @@
+name: Community data sync
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 2,5"
+concurrency:
+  group: community-data-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Sync and validate upstream GTADB snapshot
+        run: node scripts/sync-community-data.mjs
+      - name: Commit refreshed data when changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh auth setup-git
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/assets/street-leonida/maps/gtadb-landmarks-5c1d69f.json public/assets/street-leonida/maps/community-manifest.json
+          if git diff --cached --quiet; then
+            echo 'No community data changes.'
+          else
+            git commit -m 'chore(data): sync community landmarks'
+            git push
+            if [[ "$GITHUB_REF" == 'refs/heads/main' ]]; then
+              printf '{"event_type":"community-data-updated","client_payload":{"sha":"%s"}}\n' "$(git rev-parse HEAD)" \
+                | gh api --method POST "/repos/${GITHUB_REPOSITORY}/dispatches" --input -
+            else
+              echo 'Skipping production artifact dispatch because this sync run is not on main.'
+            fi
+          fi

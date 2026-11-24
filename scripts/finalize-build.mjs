@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
+import { access, readFile, writeFile, readdir, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { createServer, loadEnv } from "vite";
@@ -195,21 +195,31 @@ try {
 const assets = (await readdir(join(outDir, "assets")))
   .filter((name) => /\.(?:js|css|woff2)$/.test(name))
   .map((name) => `${base}assets/${name}`);
-const threeDimensionalAssets = assets.filter((url) =>
-  /\/(?:ExplorerView|walk-[a-z-]+)-[^/]+\.(?:js|css)$/.test(url),
-);
 const precache = [
   base,
   `${base}index.html`,
   `${base}favicon.svg`,
-  ...assets.filter((url) => !threeDimensionalAssets.includes(url)),
+  ...assets,
   `${base}assets/gta6-leonida-atlas/basemap.svg`,
   `${base}assets/street-leonida/maps/gtadb-landmarks-5c1d69f.json`,
 ];
+for (const path of [
+  'assets/leonida-database/map-locations.json',
+  'assets/street-leonida/maps/community-manifest.json',
+  'assets/leonida-database/fullsweep-locations.json',
+  'assets/leonida-database/fullsweep-manifest.json',
+]) {
+  try {
+    await access(join(outDir, path));
+    precache.push(`${base}${path}`);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+}
 const contentHash = createHash("sha256").update(
-  html + JSON.stringify([precache, threeDimensionalAssets]),
+  html + JSON.stringify(precache),
 );
-for (const url of [...precache, ...threeDimensionalAssets]) {
+for (const url of precache) {
   if (url !== base)
     contentHash.update(await readFile(join(outDir, url.slice(base.length))));
 }
@@ -218,7 +228,7 @@ const prefix = `atlas-${createHash("sha256").update(base).digest("hex").slice(0,
 const worker = `// Generated per release; never cache external analytics, APIs, or private data.
 const CACHE=${JSON.stringify(prefix + revision)}, PREFIX=${JSON.stringify(prefix)}, BASE=${JSON.stringify(base)};
 const CORE=${JSON.stringify(precache)};
-const APP_FILES=CORE.concat(${JSON.stringify(threeDimensionalAssets)});
+const APP_FILES=CORE;
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE)));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith(PREFIX)&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',event=>{
@@ -226,7 +236,7 @@ self.addEventListener('fetch',event=>{
   if(request.method!=='GET'||url.origin!==self.location.origin||!url.pathname.startsWith(BASE))return;
   if(url.pathname===BASE+'analytics.html'||url.pathname===BASE+'analytics-bootstrap.js')return;
   const navigation=request.mode==='navigate';
-  const publicOptional=url.pathname.startsWith(BASE+'assets/street-leonida/')&&/\\.(?:webp|jpg|png|svg|json)$/.test(url.pathname);
+  const publicOptional=url.pathname.startsWith(BASE+'assets/street-leonida/maps/')&&/\\.(?:webp|jpg|png|svg|json)$/.test(url.pathname);
   const asset=APP_FILES.includes(url.pathname)||publicOptional;
   if(request.headers.has('authorization')||(!navigation&&url.search))return;
   if(!navigation&&!asset)return;
@@ -235,7 +245,7 @@ self.addEventListener('fetch',event=>{
     const cached=await cache.match(request);if(cached)return cached;
     const response=await fetch(request);
     if(response.ok&&response.type==='basic'&&!/private|no-store/i.test(response.headers.get('cache-control')||'')){
-      // Bound optional 3D asset caching; the app shell and public data remain pinned.
+      // Keep public map assets available offline after first use.
       try {
         if(publicOptional&&!APP_FILES.includes(url.pathname)){
           const keys=await cache.keys();const extras=keys.filter(key=>!APP_FILES.includes(new URL(key.url).pathname));

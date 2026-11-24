@@ -31,7 +31,7 @@ export const ATLAS_PROJECT_META: Record<
     title: "Leonida Atlas Changelog: Public Release History",
     heading: "Leonida Atlas Release History",
     description:
-      "Read the public Leonida Atlas release history, including changes to community cartography, the optional 3D explorer and local map tools.",
+      "Read the public Leonida Atlas release history, including changes to community cartography and local map tools.",
   },
   licenses: {
     title: "Leonida Atlas Licenses: Code, Cartography & Asset Rights",

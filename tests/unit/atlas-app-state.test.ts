@@ -12,7 +12,10 @@ describe('standalone routes and optional analytics', () => {
       resolveRoute('/gta6-leonida-atlas/app/viewpoint/grassrivers-regional-entry', '').placeId,
     ).toBe('region:grassrivers');
     expect(resolveRoute('/atlas/', '?page=credits').view).toBe('project');
-    expect(resolveRoute('/atlas/', '?view=3d').view).toBe('explorer');
+    expect(resolveRoute('/atlas/', '?view=3d').view).toBe('map');
+    expect(resolveRoute('/atlas/', '?view=3d&place=region%3Avice-city').placeId).toBe(
+      'region:vice-city',
+    );
     expect(resolveRoute('/', '?place=custom%3Aone').placeId).toBe('custom:one');
   });
   it('rejects unset, malformed or executable measurement IDs', () => {

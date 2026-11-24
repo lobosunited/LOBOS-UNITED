@@ -6,7 +6,7 @@ import {
   ATLAS_PROJECT_META,
   atlasPageMeta,
 } from "../../app/seo";
-import { projectPath, publicPath } from "../explorer/public-path";
+import { projectPath } from "../../app/public-path";
 
 function AtlasIntroduction() {
   return (
@@ -47,13 +47,7 @@ function AtlasIntroduction() {
           <p>
             The interactive map opens with JavaScript. Explore as a guest, save
             favorites, write notes and organize collections locally in this
-            browser. An optional 3D reconstruction uses the same approximate
-            coordinate frame.
-          </p>
-          <p>
-            <a href={`${publicPath("")}?view=3d`}>
-              Open the optional 3D explorer
-            </a>
+            browser.
           </p>
         </article>
       </div>

@@ -1,5 +1,11 @@
 import type { Position } from '../../domain/types';
-import { CANONICAL_BOUNDS } from '../street-leonida/leonida-coordinates';
+
+export const CANONICAL_BOUNDS = Object.freeze({
+  west: -16000,
+  east: 4000,
+  south: -8000,
+  north: 12000,
+});
 
 export interface MapBounds {
   west: number;

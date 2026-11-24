@@ -1,0 +1,54 @@
+name: FullSweep locations sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 6 * * *"
+
+concurrency:
+  group: community-data-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.13.0"
+      - name: Activate pnpm
+        run: corepack enable && corepack prepare pnpm@11.3.0 --activate
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test FullSweep importer validation
+        run: pnpm exec vitest run tests/unit/fullsweep-sync.test.ts
+      - name: Download and validate FullSweep locations
+        run: node scripts/sync-fullsweep-locations.mjs
+      - name: Commit the two generated public data files on main
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- \
+            public/assets/leonida-database/fullsweep-locations.json \
+            public/assets/leonida-database/fullsweep-manifest.json
+          if git diff --cached --quiet; then
+            echo 'No FullSweep location changes.'
+            exit 0
+          fi
+          gh auth setup-git
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(data): sync FullSweep locations'
+          git push origin HEAD:main
+          printf '{"event_type":"community-data-updated","client_payload":{"sha":"%s"}}\n' "$(git rev-parse HEAD)" \
+            | gh api --method POST "/repos/${GITHUB_REPOSITORY}/dispatches" --input -

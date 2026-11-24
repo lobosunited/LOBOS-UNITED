@@ -8,7 +8,7 @@ alone does not change the publicly served Atlas project pages.
 `src/app/seo.ts` defines the entry and six project-page subjects. The finalizer
 renders the existing React project components into initial HTML, so crawlers and
 readers without JavaScript receive the same source information as the client.
-The map and optional 3D explorer keep their existing client startup.
+The map keeps its existing client startup.
 
 Set `VITE_ATLAS_SITE_ORIGIN` to the deployment origin at build time for absolute
 canonicals and social URLs. Public forks do not inherit an official hostname.

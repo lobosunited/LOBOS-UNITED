@@ -22,6 +22,10 @@ Adaptations made in this repository may include coordinate transforms, filtering
 
 Data originating from `gtadb.org` remains under CC BY 4.0 and must retain attribution.
 
+## GTA VI Landmarks Map data
+
+The optional **GTA6Map references** layer uses the landmark catalogue from [gta6map.github.io](https://github.com/gta6map/gta6map.github.io), pinned to revision `2e4a837210f627c5aed6b4159c46961efece17a2`. The upstream README declares its landmark data and map tiles public domain. Its records associate approximate in-game map points with real-world analogue addresses. The Atlas labels these records as unverified community references; they are not official game locations or mission instructions.
+
 ## GTADB code
 
 If code is copied directly from `gtadb.org`, it remains subject to that project's MIT license and copyright notices. This release is structured to keep direct third-party code notices here when applicable.

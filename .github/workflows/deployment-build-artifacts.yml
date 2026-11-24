@@ -1,0 +1,331 @@
+name: Deployment build artifacts
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - community-data-updated
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployment-build-artifacts-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VITE_ANALYTICS_ID: ""
+      VITE_ANALYTICS_ORIGIN: ""
+      VITE_ANALYTICS_PARENT_ORIGIN: ""
+    steps:
+      - name: Validate sync revision payload
+        if: github.event_name == 'repository_dispatch'
+        env:
+          SOURCE_SHA: ${{ github.event.client_payload.sha }}
+        shell: bash
+        run: |
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Community sync dispatch did not provide a valid commit SHA.' >&2
+            exit 1
+          fi
+
+      - name: Check out one source commit
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify checked-out sync revision
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EXPECTED_SHA: ${{ github.event.client_payload.sha }}
+          CHECKED_OUT_SHA: ${{ steps.checkout.outputs.commit }}
+        shell: bash
+        run: |
+          if [[ "$CHECKED_OUT_SHA" != "$EXPECTED_SHA" ]]; then
+            echo 'Checked-out commit does not match the community sync commit.' >&2
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.13.0
+
+      - name: Activate pnpm
+        run: corepack enable && corepack prepare pnpm@11.3.0 --activate
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check TypeScript
+        run: pnpm typecheck
+
+      - name: Build GTA6 State target
+        env:
+          ATLAS_BASE_PATH: /gta6-leonida-atlas/
+          ATLAS_OUT_DIR: ${{ runner.temp }}/atlas-builds/GTA6-State
+          VITE_ATLAS_SITE_ORIGIN: https://gta6state.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ATLAS_OUT_DIR"
+          pnpm exec vite build --outDir "$ATLAS_OUT_DIR" --emptyOutDir
+          node scripts/finalize-build.mjs
+
+      - name: Build Zonepedia target
+        env:
+          ATLAS_BASE_PATH: /
+          ATLAS_OUT_DIR: ${{ runner.temp }}/atlas-builds/Zonepedia
+          VITE_ATLAS_SITE_ORIGIN: https://atlas.zonepedia.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ATLAS_OUT_DIR"
+          pnpm exec vite build --outDir "$ATLAS_OUT_DIR" --emptyOutDir
+          node scripts/finalize-build.mjs
+
+      - name: Verify target paths and restrict artifact contents
+        env:
+          GTA6_STATE_OUT: ${{ runner.temp }}/atlas-builds/GTA6-State
+          ZONEPEDIA_OUT: ${{ runner.temp }}/atlas-builds/Zonepedia
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const targets = [
+            {
+              name: 'GTA6-State',
+              directory: process.env.GTA6_STATE_OUT,
+              base: '/gta6-leonida-atlas/',
+              origin: 'https://gta6state.com',
+            },
+            {
+              name: 'Zonepedia',
+              directory: process.env.ZONEPEDIA_OUT,
+              base: '/',
+              origin: 'https://atlas.zonepedia.com',
+            },
+          ];
+
+          const sourceArtworkModule = 'src/features/dossier/rockstar-artwork.ts';
+          const artworkSourceExists = fs.existsSync(sourceArtworkModule);
+          const artworkSource = artworkSourceExists
+            ? fs.readFileSync(sourceArtworkModule, 'utf8')
+            : '';
+          const artworkReferences = [
+            ...artworkSource.matchAll(/"url": "(\/assets\/rockstar-artwork\/[^"]+)"/g),
+          ].map((match) => match[1]);
+          const requiredArtwork = new Set(artworkReferences);
+
+          function filesBelow(directory) {
+            if (!fs.existsSync(directory)) return [];
+            return fs.readdirSync(directory, { recursive: true }).flatMap((entry) => {
+              const absolute = path.join(directory, entry);
+              return fs.statSync(absolute).isFile() ? [absolute] : [];
+            });
+          }
+
+          for (const target of targets) {
+            const indexPath = path.join(target.directory, 'index.html');
+            const index = fs.readFileSync(indexPath, 'utf8');
+            const expectedCanonical = `<link rel="canonical" href="${target.origin}${target.base}">`;
+            if (!index.includes(expectedCanonical)) {
+              throw new Error(`${target.name}: entry canonical URL is incorrect.`);
+            }
+
+            const assetUrls = [...index.matchAll(/(?:src|href)="([^"]*\/assets\/[^\"]+)"/g)]
+              .map((match) => match[1]);
+            if (!assetUrls.length || assetUrls.some((url) => !url.startsWith(`${target.base}assets/`))) {
+              throw new Error(`${target.name}: Vite asset URLs do not match its base path.`);
+            }
+
+            for (const page of ['about', 'documentation', 'credits', 'contributing', 'changelog', 'licenses']) {
+              const html = fs.readFileSync(path.join(target.directory, page, 'index.html'), 'utf8');
+              if (!html.includes(`<link rel="canonical" href="${target.origin}${target.base}${page}">`)) {
+                throw new Error(`${target.name}: canonical URL for ${page} is incorrect.`);
+              }
+            }
+
+            const worker = fs.readFileSync(path.join(target.directory, 'sw.js'), 'utf8');
+            if (!worker.includes(`BASE=${JSON.stringify(target.base)}`)) {
+              throw new Error(`${target.name}: service-worker base/scope is incorrect.`);
+            }
+            for (const requiredPath of [
+              'assets/street-leonida/maps/gtadb-landmarks-5c1d69f.json',
+              'assets/leonida-database/map-locations.json',
+              'assets/gta6-leonida-atlas/basemap.svg',
+            ]) {
+              if (!worker.includes(`${target.base}${requiredPath}`)) {
+                throw new Error(`${target.name}: service-worker precache is missing ${requiredPath}.`);
+              }
+            }
+
+            const fullSweepDataPath = path.join(
+              target.directory,
+              'assets/leonida-database/fullsweep-locations.json',
+            );
+            const fullSweepManifestPath = path.join(
+              target.directory,
+              'assets/leonida-database/fullsweep-manifest.json',
+            );
+            const hasFullSweepData = fs.existsSync(fullSweepDataPath);
+            const hasFullSweepManifest = fs.existsSync(fullSweepManifestPath);
+            if (hasFullSweepData !== hasFullSweepManifest) {
+              throw new Error(`${target.name}: FullSweep data and manifest must be packaged together.`);
+            }
+            if (hasFullSweepData) {
+              let snapshot;
+              let manifest;
+              try {
+                snapshot = JSON.parse(fs.readFileSync(fullSweepDataPath, 'utf8'));
+                manifest = JSON.parse(fs.readFileSync(fullSweepManifestPath, 'utf8'));
+              } catch {
+                throw new Error(`${target.name}: FullSweep data or manifest is invalid JSON.`);
+              }
+              if (
+                snapshot?.schemaVersion !== 1 ||
+                snapshot?.source !== 'fullsweepmap.com/api/v1/locations' ||
+                !Array.isArray(snapshot?.locations) ||
+                snapshot.locations.length < 10 ||
+                snapshot.locations.length > 20000 ||
+                manifest?.schemaVersion !== 1 ||
+                manifest?.source !== snapshot.source ||
+                manifest?.records !== snapshot.locations.length ||
+                manifest?.positioned !== snapshot.locations.filter((row) => row?.mapCoordinates).length ||
+                manifest?.upstreamRevision !== snapshot?.upstreamRevision ||
+                !/^[a-f0-9]{64}$/i.test(String(manifest?.sha256 ?? '')) ||
+                manifest?.sha256 !== snapshot?.sha256
+              ) {
+                throw new Error(`${target.name}: FullSweep snapshot failed its manifest consistency checks.`);
+              }
+              for (const requiredPath of [
+                'assets/leonida-database/fullsweep-locations.json',
+                'assets/leonida-database/fullsweep-manifest.json',
+              ]) {
+                if (!worker.includes(`${target.base}${requiredPath}`)) {
+                  throw new Error(`${target.name}: service-worker precache is missing ${requiredPath}.`);
+                }
+              }
+            }
+
+            const analytics = fs.readFileSync(path.join(target.directory, 'analytics-bootstrap.js'), 'utf8');
+            if (!analytics.includes('var id="",expectedOrigin="",parentOrigin=""')) {
+              throw new Error(`${target.name}: analytics configuration was not isolated from site-specific values.`);
+            }
+
+            const report = path.join(target.directory, 'assets/leonida-database/catalogs/catalog-build-report.json');
+            if (fs.existsSync(report)) fs.rmSync(report);
+
+            const artworkDirectory = path.join(target.directory, 'assets/rockstar-artwork');
+            const artworkManifest = path.join(artworkDirectory, 'manifest.json');
+            if (fs.existsSync(artworkManifest)) fs.rmSync(artworkManifest);
+
+            if (fs.existsSync(artworkDirectory)) {
+              if (!artworkSourceExists) {
+                throw new Error(`${target.name}: artwork exists without a source allowlist.`);
+              }
+              if (!requiredArtwork.size) {
+                throw new Error(`${target.name}: artwork source allowlist is empty.`);
+              }
+              const missingArtwork = [...requiredArtwork].filter((url) =>
+                !fs.existsSync(path.join(target.directory, url.slice(1))),
+              );
+              if (missingArtwork.length) {
+                throw new Error(`${target.name}: ${missingArtwork.length} referenced artwork files are missing.`);
+              }
+              for (const file of filesBelow(artworkDirectory)) {
+                const url = `/${path.relative(target.directory, file).split(path.sep).join('/')}`;
+                if (!requiredArtwork.has(url)) fs.rmSync(file);
+              }
+            } else if (requiredArtwork.size) {
+              throw new Error(`${target.name}: the app references artwork but no runtime artwork was built.`);
+            }
+
+            const prohibitedPath = /(?:^|\/)(?:\.env[^/]*|secrets?(?:[-_.][^/]*)?|credentials?(?:[-_.][^/]*)?|service[-_]?account(?:[-_.][^/]*)?|firebase-adminsdk[^/]*|google-services\.json|\.npmrc|\.pypirc|\.netrc|\.git-credentials|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|application_default_credentials\.json|research_assets|ROCKSTAR_OFFICIAL_ARTWORK|backups?|patch-backups|\.ssh|\.aws|\.azure|\.kube|\.docker)(?:\/|$)/i;
+            const prohibitedExtension = /\.(?:zip|7z|rar|tar|tgz)(?:\.gz)?$|\.(?:sqlite3?|db|sql|dump|pem|key|p8|p12|pfx|crt|cer|der|ppk|jks|keystore)$|(?:^|\/)[^/]+\.(?:bak|backup)(?:[-.]|$)|catalog-build-report\.json$/i;
+            const outputFiles = filesBelow(target.directory);
+            const prohibited = outputFiles.filter((file) => {
+              const relative = path.relative(target.directory, file).split(path.sep).join('/');
+              return prohibitedPath.test(relative) || prohibitedExtension.test(relative);
+            });
+            if (prohibited.length) {
+              throw new Error(`${target.name}: prohibited files were found in the build output.`);
+            }
+
+            const credentialKey = /(?:^|_)(?:access_token|refresh_token|id_token|token|api_key|access_key|secret|client_secret|private_key|password|passwd|credential|credentials|authorization|jwt)(?:_|$)/;
+            function hasCredentialFields(value) {
+              if (Array.isArray(value)) return value.some(hasCredentialFields);
+              if (value === null || typeof value !== 'object') return false;
+              return Object.entries(value).some(([key, child]) => {
+                const normalizedKey = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+                const populated = typeof child === 'string'
+                  ? child.trim().length > 0
+                  : Array.isArray(child)
+                    ? child.length > 0
+                    : child !== null && typeof child === 'object' && Object.keys(child).length > 0;
+                return (credentialKey.test(normalizedKey) && populated) || hasCredentialFields(child);
+              });
+            }
+            for (const file of outputFiles.filter((candidate) => candidate.endsWith('.json'))) {
+              let parsed;
+              try {
+                parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+              } catch {
+                throw new Error(`${target.name}: an output JSON file could not be parsed safely.`);
+              }
+              if (hasCredentialFields(parsed)) {
+                throw new Error(`${target.name}: credential-like JSON fields were found in the build output.`);
+              }
+            }
+
+            const textExtensions = new Set([
+              '.html', '.js', '.css', '.json', '.svg', '.txt', '.xml', '.webmanifest',
+            ]);
+            const secretMarkers = [
+              /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
+              /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/,
+              /\bgithub_pat_[A-Za-z0-9_]{20,}\b/,
+              /\bAKIA[0-9A-Z]{16}\b/,
+              /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/,
+              /\bsk_(?:live|test)_[A-Za-z0-9]{20,}\b/,
+            ];
+            const potentialSecret = outputFiles.some((file) => {
+              if (!textExtensions.has(path.extname(file).toLowerCase())) return false;
+              const content = fs.readFileSync(file, 'utf8');
+              return secretMarkers.some((marker) => marker.test(content));
+            });
+            if (potentialSecret) {
+              throw new Error(`${target.name}: a high-confidence secret marker was found in text output.`);
+            }
+
+            console.log(`${target.name}: base, canonical routes, offline precache, analytics isolation, and runtime-only assets verified.`);
+          }
+          NODE
+
+      - name: Upload GTA6-State production build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: GTA6-State
+          path: ${{ runner.temp }}/atlas-builds/GTA6-State/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload Zonepedia production build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Zonepedia
+          path: ${{ runner.temp }}/atlas-builds/Zonepedia/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

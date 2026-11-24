@@ -8,7 +8,7 @@ import {
   GTADB_REVISION,
   GTADB_SOURCE,
 } from '../street-leonida/gtadb';
-import { projectPath, publicPath } from '../explorer/public-path';
+import { projectPath, publicPath } from '../../app/public-path';
 import { LEONIDA_ATLAS_RELEASES } from '../street-leonida/releases';
 import { AnalyticsPreferences } from '../../app/AnalyticsConsent';
 import { ATLAS_PROJECT_META } from '../../app/seo';
@@ -80,8 +80,7 @@ function About() {
       <Section title="Independent by design">
         <p>
           The public application builds as static files and runs without a CMS, private server or
-          account. Its source code is licensed under AGPL-3.0-only. The optional 3D explorer uses
-          the same community coordinate frame.
+          account. Its source code is licensed under AGPL-3.0-only.
         </p>
       </Section>
       <Section title="Where Leonida Atlas is used" id="deployments">
@@ -146,8 +145,7 @@ function Documentation() {
           The coordinate plane represents Leonida game units, never real-world latitude and
           longitude. The calibrated transform is <code>world x = GTADB x × 2</code> and{' '}
           <code>world z = −GTADB y × 2</code>. The legacy SVG map uses that world z value for its
-          vertical axis. The main atlas and 3D reconstruction stay aligned with the same source
-          records.
+          vertical axis. The main atlas stays aligned with the same source records.
         </p>
         <p>
           Missing coordinates remain missing; zero is a valid coordinate and is never a substitute
@@ -196,19 +194,6 @@ function Documentation() {
           Use export to save a versioned JSON backup. Import validates its contents and presents a
           preview before merging with existing data. A backup contains personal notes and markers,
           so share it deliberately.
-        </p>
-      </Section>
-      <Section title="Optional 3D explorer">
-        <p>
-          The 3D view loads only when opened. Move with WASD or arrow keys, hold Shift to run, click
-          the scene for mouse look, press E to inspect nearby evidence and M to open its travel map.
-          Escape releases the pointer. Touch users have an analog movement pad, look pad and button
-          controls.
-        </p>
-        <p>
-          A deliberate tap on the travel map moves to that coordinate. Panning, pinching and
-          cancelled gestures do not trigger travel. Collision-safe arrival adjustments are
-          disclosed. If WebGL is unavailable, the main atlas and your saved work remain available.
         </p>
       </Section>
     </>
@@ -288,9 +273,9 @@ function Credits() {
       <Section title="Built with">
         <p>
           React and TypeScript provide the application, Vite builds static files, Leaflet provides
-          the main map interactions, Dexie handles IndexedDB storage, and Three.js renders the
-          optional reconstruction. The travel map retains its native SVG coordinate layer. Interface
-          typography uses Inter and Oswald. Dependencies retain their own licenses.
+          the interactive map, and Dexie handles IndexedDB storage. The travel map retains its native
+          SVG coordinate layer. Interface typography uses Inter and Oswald. Dependencies retain
+          their own licenses.
         </p>
       </Section>
     </>

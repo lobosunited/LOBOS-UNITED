@@ -1,6 +1,6 @@
 import { useId } from "react";
-import { explorerPath } from "../explorer/public-path";
-import type { StreetLeonidaRegionSlug } from "../street-leonida/leonida-evidence";
+import { publicPath } from "../../app/public-path";
+import type { AtlasRegionSlug } from "../../data/region-types";
 import {
   getRegionDiscoveries,
   RESEARCH_REGIONS,
@@ -11,13 +11,11 @@ import "./regional-research.css";
 
 interface RegionalResearchProps {
   /** Omit to show all six region groups in the explorer's existing Evidence dialog. */
-  region?: StreetLeonidaRegionSlug;
-  travel?: "explorer" | "link";
+  region?: AtlasRegionSlug;
 }
 
 export default function RegionalResearch({
   region,
-  travel = "link",
 }: RegionalResearchProps) {
   const headingId = useId();
   const groups = region
@@ -72,25 +70,12 @@ export default function RegionalResearch({
             ))}
           </ul>
           <p className="regional-research-placement">
-            Travel opens the existing approximate region view, not the specific
-            site described above.
+            View the approximate region on the interactive map; the observations
+            above do not identify a specific coordinate.
           </p>
-          {travel === "explorer" ? (
-            <button
-              type="button"
-              data-walk-region={group.slug}
-              aria-label={`Explore the region: ${group.name}`}
-            >
-              Explore the region
-            </button>
-          ) : (
-            <a
-              className="regional-research-travel"
-              href={explorerPath(`region:${group.slug}`)}
-            >
-              Explore {group.name} in 3D
-            </a>
-          )}
+          <a className="regional-research-travel" href={`${publicPath("")}?place=${encodeURIComponent(`region:${group.slug}`)}`}>
+            View {group.name} on the map
+          </a>
         </details>
       ))}
       {!region && (

@@ -4,6 +4,21 @@ export interface Position {
   y: number;
 }
 export type Category = 'region' | 'landmark' | 'nature' | 'transport' | 'business' | 'personal';
+export interface PlaceResearch {
+  provider: 'FullSweep';
+  referenceName: string;
+  reliability?: string;
+  evidenceSource?: string;
+  foundBy?: string;
+  character?: string;
+  activity?: number;
+  region?: string;
+  sourceUrl: string;
+  attribution: string;
+  inGameNameIdentified: boolean;
+  realWorldAddress?: string;
+  referenceCategory?: string;
+}
 export interface Place {
   id: string;
   title: string;
@@ -15,6 +30,7 @@ export interface Place {
   region: string;
   source: { title: string; url: string; license?: string };
   evidence: 'approximate' | 'uncertain' | 'personal';
+  research?: PlaceResearch;
 }
 export interface PersonalMarker {
   id: string;
@@ -77,6 +93,7 @@ export interface LayerDefinition {
 export interface Filters {
   query: string;
   category: Category | 'all';
+  categoryTags?: string[];
   favoritesOnly: boolean;
   personalOnly: boolean;
   evidence: 'all' | 'approximate' | 'uncertain';

@@ -1,10 +1,9 @@
 import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Info, MapPinPlus, Menu, X } from 'lucide-react';
+import { CarFront, Info, MapPinPlus, Menu, Users, X, Layers, Trophy, Maximize2, Minimize2 } from 'lucide-react';
 import { loadCatalogue, markerToPlace } from '../data/catalogue';
 import { filterPlaces } from '../domain/filter';
 import { DEFAULT_LAYERS } from '../features/map/layers';
-import MapView from '../features/map/MapView';
-import { explorerPath } from '../features/explorer/public-path';
+
 import { atlasRegistry } from '../plugins/registry';
 import {
   hydrateUserData,
@@ -20,12 +19,15 @@ import { resolveRoute } from './routes';
 import { updateAtlasHead } from './seo';
 import type { Position } from '../domain/types';
 
+const MapView = lazy(() => import('../features/map/MapView'));
 const PlaceDetails = lazy(() => import('../features/library/PlaceDetails'));
 const MarkerEditor = lazy(() => import('../features/editor/MarkerEditor'));
 const BackupDialog = lazy(() => import('../features/library/BackupDialog'));
 const SettingsDialog = lazy(() => import('../features/library/SettingsDialog'));
-const ExplorerView = lazy(() => import('../features/explorer/ExplorerView'));
 const ProjectPage = lazy(() => import('../features/project/ProjectPage'));
+const CatalogPage = lazy(() => import('../features/catalog/CatalogPage'));
+const IntelligencePage = lazy(() => import('../features/intelligence/IntelligencePage'));
+const ProgressPage = lazy(() => import('../features/progress/ProgressPage'));
 
 let cataloguePromise: ReturnType<typeof loadCatalogue> | undefined;
 for (const layer of DEFAULT_LAYERS) {
@@ -38,7 +40,23 @@ export default function App() {
   const [route, setRoute] = useState(() => resolveRoute(location.pathname, location.search));
   const appliedPlaceRoute = useRef<typeof route>(null);
   useEffect(() => { updateAtlasHead(location.pathname, location.search); }, [route]);
-  const places = useDomainStore((s) => s.places);
+  const [layerPanelOpen, setLayerPanelOpen] = useState(false);
+  const mapWorkspaceRef = useRef<HTMLElement | null>(null);
+  const [mapFullscreen, setMapFullscreen] = useState(false);
+  useEffect(() => {
+    const updateFullscreen = () => setMapFullscreen(document.fullscreenElement === mapWorkspaceRef.current);
+    document.addEventListener('fullscreenchange', updateFullscreen);
+    return () => document.removeEventListener('fullscreenchange', updateFullscreen);
+  }, []);
+  const toggleMapFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement === mapWorkspaceRef.current) await document.exitFullscreen();
+      else if (!document.fullscreenElement) await mapWorkspaceRef.current?.requestFullscreen();
+    } catch {
+      // Fullscreen can be unavailable in embedded or restricted browser contexts.
+    }
+  }, []);
+const places = useDomainStore((s) => s.places);
   const status = useDomainStore((s) => s.status);
   const error = useDomainStore((s) => s.error);
   const markers = useUserStore((s) => s.markers);
@@ -51,13 +69,28 @@ export default function App() {
   const editorOpen = useUiStore((s) => s.editorOpen);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const selectedId = useMapStore((s) => s.selectedId);
+  const [foundIds, setFoundIds] = useState<string[]>(() => { try { const raw = localStorage.getItem('lobos-united-found-v1'); const value = raw ? JSON.parse(raw) : []; return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []; } catch { return []; } });
+  const [hideFound, setHideFound] = useState(false);
+  useEffect(() => { try { localStorage.setItem('lobos-united-found-v1', JSON.stringify(foundIds)); } catch { /* local storage unavailable */ } }, [foundIds]);
+  const toggleFound = useCallback((placeId: string) => { const wasFound = foundIds.includes(placeId); setFoundIds((current) => wasFound ? current.filter((id) => id !== placeId) : [...current, placeId]); if (!wasFound && hideFound && selectedId === placeId) useMapStore.getState().select(null); }, [foundIds, hideFound, selectedId]);
   const layers = useMapStore((s) => s.layers);
+  const allMapLayersVisible = layers.length > 0 && layers.every((layer) => layer.visible);
+  const toggleMapLayer = (layerId: string) => {
+    const current = useMapStore.getState().layers;
+    useMapStore.getState().setLayers(
+      current.map((layer) => layer.id === layerId ? { ...layer, visible: !layer.visible } : layer)
+    );
+  };
+  const toggleAllMapLayers = () => {
+    const show = !allMapLayersVisible;
+    useMapStore.getState().setLayers(
+      useMapStore.getState().layers.map((layer) => ({ ...layer, visible: show }))
+    );
+  };
   const focus = useMapStore((s) => s.focus);
   const editorMode = useMapStore((s) => s.editorMode);
   const draftPosition = useMapStore((s) => s.draftPosition);
   const ready = usePersistenceStore((s) => s.ready);
-  const persistenceLoading = usePersistenceStore((s) => s.status === 'loading');
-  const workspaceRevision = useWorkspaceStore((s) => s.revision);
   const allPlaces = useMemo(() => [...places, ...markers.map(markerToPlace)], [places, markers]);
   const deferredQuery = useDeferredValue(filters.query);
   const filtered = useMemo(
@@ -68,10 +101,10 @@ export default function App() {
         favorites.map((f) => f.placeId),
         notes,
         collections,
-      ).filter((place) =>
+      ).filter((place) => !hideFound || !foundIds.includes(place.id)).filter((place) =>
         [...atlasRegistry.filters.values()].every((filter) => filter.matches(place)),
       ),
-    [allPlaces, filters, deferredQuery, favorites, notes, collections],
+    [allPlaces, filters, deferredQuery, favorites, notes, collections, hideFound, foundIds],
   );
   const selected = useMemo(
     () => allPlaces.find((p) => p.id === selectedId),
@@ -100,9 +133,21 @@ export default function App() {
     history.pushState({}, '', import.meta.env.BASE_URL);
     setRoute(resolveRoute(location.pathname, location.search));
   }, []);
-  function navigate(view: '3d' | 'about') {
-    const url = view === '3d' ? explorerPath(selected?.id) : `${import.meta.env.BASE_URL}about`;
-    history.pushState({}, '', url);
+  function navigateAbout() {
+    history.pushState({}, '', `${import.meta.env.BASE_URL}about`);
+    setRoute(resolveRoute(location.pathname, location.search));
+  }
+
+  function navigateProgress() {
+    const base = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
+    history.pushState({}, '', `${base}progress`);
+    setRoute(resolveRoute(location.pathname, location.search));
+  }
+  function navigateCatalog(page: 'characters' | 'vehicles') {
+    const base = import.meta.env.BASE_URL.endsWith('/')
+      ? import.meta.env.BASE_URL
+      : `${import.meta.env.BASE_URL}/`;
+    history.pushState({}, '', `${base}${page}`);
     setRoute(resolveRoute(location.pathname, location.search));
   }
   function beginMarker() {
@@ -180,22 +225,27 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.reducedMotion = String(preferences.reducedMotion);
   }, [preferences.reducedMotion]);
-  if (route.view === 'explorer') {
-    const initialPlace = allPlaces.find((place) => place.id === route.placeId);
-    // Deep links must wait for the catalogue/local hydration before choosing a spawn.
-    if (route.placeId && !initialPlace && (status === 'loading' || persistenceLoading))
-      return <div className="full-loading">Opening selected place in 3D…</div>;
+  if (route.view === 'progress')
     return (
-      <Suspense fallback={<div className="full-loading">Opening 3D explorer…</div>}>
-        <ExplorerView
-          key={`${route.placeId ?? 'default'}:${workspaceRevision}`}
-          initialPlace={initialPlace}
-          requestedPlaceId={route.placeId}
+      <Suspense fallback={<div className="full-loading">Loading progress tracker...</div>}>
+        <ProgressPage places={allPlaces} onClose={goMap} onLocate={(placeId) => { select(placeId); goMap(); }} />
+      </Suspense>
+    );
+  if (route.view === 'intelligence')
+    return (
+      <Suspense fallback={<div className="full-loading">Loading intelligence archive...</div>}>
+        <IntelligencePage onClose={goMap} />
+      </Suspense>
+    );
+  if (route.view === 'catalog')
+    return (
+      <Suspense fallback={<div className="full-loading">Loading Leonida catalog…</div>}>
+        <CatalogPage
+          category={route.page === 'vehicles' ? 'vehicles' : 'characters'}
           onClose={goMap}
         />
       </Suspense>
     );
-  }
   if (route.view === 'project')
     return (
       <Suspense fallback={<div className="full-loading">Loading project information…</div>}>
@@ -203,14 +253,19 @@ export default function App() {
       </Suspense>
     );
   return (
-    <main className="atlas-app" data-details={Boolean(selected)}>
+    <main
+      className="atlas-app"
+      data-details={Boolean(selected)}
+      data-placement={editorMode !== 'none'}
+    >
       <a className="skip-link" href="#atlas-map-region">
         Skip to map
       </a>
-      <Sidebar places={filtered} />
-      <section className="map-workspace" id="atlas-map-region" aria-label="Interactive Leonida map">
+      <Sidebar places={filtered} allPlaces={allPlaces} foundIds={foundIds} hideFound={hideFound} onToggleFound={toggleFound} onHideFoundChange={setHideFound} />
+      <section ref={mapWorkspaceRef} className="map-workspace" id="atlas-map-region" aria-label="Interactive Leonida map">
+        <Suspense fallback={<div className="map-notice" role="status">Loading Leonida map engine...</div>}>
         <MapView
-          places={filtered}
+          places={selected && !filtered.some((place) => place.id === selected.id) ? [...filtered, selected] : filtered}
           layers={layers}
           selectedId={selectedId}
           focus={focus}
@@ -219,6 +274,53 @@ export default function App() {
           onSelect={select}
           onPlacePosition={placePosition}
         />
+        </Suspense>
+        <div className="map-layer-panel">
+          <div className="map-layer-heading">
+            <button
+              className="map-layer-title"
+              onClick={() => setLayerPanelOpen((open) => !open)}
+              aria-expanded={layerPanelOpen}
+            >
+              <Layers size={17} />
+              <span>MAP LAYERS</span>
+              <span className="map-layer-total">{places.length.toLocaleString()}</span>
+            </button>
+            <button
+              className="map-layer-collapse"
+              onClick={() => setLayerPanelOpen((open) => !open)}
+              aria-label={layerPanelOpen ? "Collapse map layers" : "Expand map layers"}
+            >
+              {layerPanelOpen ? "−" : "+"}
+            </button>
+          </div>
+          {layerPanelOpen && (
+            <>
+              <button className="map-layer-all" onClick={toggleAllMapLayers}>
+                {allMapLayersVisible ? "Hide all layers" : "Show all layers"}
+              </button>
+              <div className="map-layer-list">
+                {layers.map((layer) => {
+                  const count = places.filter((place) => place.layerId === layer.id).length;
+                  return (
+                    <button
+                      key={layer.id}
+                      className={`map-layer-row ${layer.visible ? "is-visible" : "is-hidden"}`}
+                      onClick={() => toggleMapLayer(layer.id)}
+                      aria-pressed={layer.visible}
+                      title={layer.description || layer.name}
+                    >
+                      <span className="map-layer-swatch" style={{ background: layer.style.color }} />
+                      <span className="map-layer-name">{layer.name}</span>
+                      <span className="map-layer-count">{count.toLocaleString()}</span>
+                      <span className="map-layer-status">{layer.visible ? '\u25cf' : '\u25cb'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
         <div className="map-topbar">
           <button
             className="button sidebar-toggle"
@@ -229,18 +331,42 @@ export default function App() {
             <span>Explore</span>
           </button>
           <div className="map-actions">
-            <button className="button" disabled={!ready} onClick={beginMarker}>
+            <button className="button" disabled={!ready} onClick={beginMarker} aria-label="Add personal marker">
               <MapPinPlus size={18} />
               <span>Add marker</span>
             </button>
-            <button className="button" onClick={() => navigate('3d')}>
-              <Box size={18} />
-              <span>3D explorer</span>
+                  <button className="button map-catalog-button progress-nav-button" onClick={navigateProgress} aria-label="Open progress tracker">
+              <Trophy size={18} />
+              <span>Progress</span>
+            </button>
+            <button
+              className="button map-catalog-button"
+              onClick={() => navigateCatalog('characters')}
+              aria-label="Open character catalog"
+            >
+              <Users size={18} />
+              <span>Characters</span>
+            </button>
+            <button
+              className="button map-catalog-button"
+              onClick={() => navigateCatalog('vehicles')}
+              aria-label="Open vehicle catalog"
+            >
+              <CarFront size={18} />
+              <span>Vehicles</span>
+            </button>      <button
+              className="icon-button map-fullscreen"
+              onClick={toggleMapFullscreen}
+              aria-label={mapFullscreen ? 'Exit full screen map' : 'View full screen map'}
+              aria-pressed={mapFullscreen}
+              title={mapFullscreen ? 'Exit full screen' : 'Full screen map'}
+            >
+              {mapFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
             <button
               className="icon-button map-about"
               aria-label="About this atlas"
-              onClick={() => navigate('about')}
+              onClick={navigateAbout}
             >
               <Info size={19} />
             </button>
@@ -281,7 +407,7 @@ export default function App() {
           </div>
         }
       >
-        {selected && <PlaceDetails key={selected.id} place={selected} />}
+        {selected && <PlaceDetails key={selected.id} place={selected} found={foundIds.includes(selected.id)} onToggleFound={toggleFound} />}
         {editorOpen && <MarkerEditor position={draftPosition} onClose={closeEditor} />}
         {dialog === 'backup' && <BackupDialog onClose={closeDialog} />}
         {dialog === 'settings' && <SettingsDialog onClose={closeDialog} />}

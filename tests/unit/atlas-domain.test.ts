@@ -1,55 +1,90 @@
-import { describe, expect, it, vi } from 'vitest';
-import { filterPlaces } from '../../src/domain/filter';
-import { createRegistry } from '../../src/plugins/registry';
-import type { Filters, Place } from '../../src/domain/types';
+import { describe, expect, it, vi } from "vitest";
+import { filterPlaces, matchesSearch } from "../../src/domain/filter";
+import { createRegistry } from "../../src/plugins/registry";
+import type { Filters, Place } from "../../src/domain/types";
 
 const filters: Filters = {
-  query: '',
-  category: 'all',
+  query: "",
+  category: "all",
   favoritesOnly: false,
   personalOnly: false,
-  evidence: 'all',
+  evidence: "all",
   collectionId: null,
 };
 const place: Place = {
-  id: 'L1',
-  title: 'Café Beach',
-  description: '',
-  category: 'business',
+  id: "L1",
+  title: "Café Beach",
+  description: "",
+  category: "business",
   position: { x: 0, y: 0 },
-  layerId: 'community',
-  tags: ['food'],
-  region: 'Vice City',
-  source: { title: 'GTADB', url: 'https://map.gtadb.org' },
-  evidence: 'approximate',
+  layerId: "community",
+  tags: ["food"],
+  region: "Vice City",
+  source: { title: "GTADB", url: "https://map.gtadb.org" },
+  evidence: "approximate",
 };
-describe('composable catalogue filters', () => {
-  it('normalizes accents and finds regions/tags and personal notes', () => {
-    expect(filterPlaces([place], { ...filters, query: 'cafe' }, [], [], [])).toEqual([place]);
-    expect(filterPlaces([place], { ...filters, query: 'vice food' }, [], [], [])).toEqual([place]);
+describe("composable catalogue filters", () => {
+  it("normalizes accents and finds regions/tags and personal notes", () => {
+    expect(
+      filterPlaces([place], { ...filters, query: "cafe" }, [], [], []),
+    ).toEqual([place]);
+    expect(
+      filterPlaces([place], { ...filters, query: "vice food" }, [], [], []),
+    ).toEqual([place]);
     expect(
       filterPlaces(
         [place],
-        { ...filters, query: 'sunset' },
+        { ...filters, query: "sunset" },
         [],
-        [{ placeId: 'L1', text: 'sunset spot', updatedAt: '' }],
+        [{ placeId: "L1", text: "sunset spot", updatedAt: "" }],
         [],
       ),
     ).toEqual([place]);
   });
-  it('intersects category favorites and collection membership', () => {
+  it("ranks direct name matches above incidental description matches", () => {
+    const descriptionMatch = {
+      ...place,
+      id: "L2",
+      title: "Coastal Stop",
+      description: "Vice City cafe",
+    };
+    const nameMatch = {
+      ...place,
+      id: "L3",
+      title: "Vice City Cafe",
+      description: "",
+    };
+    expect(
+      filterPlaces(
+        [descriptionMatch, nameMatch],
+        { ...filters, query: "vice city cafe" },
+        [],
+        [],
+        [],
+      ),
+    ).toEqual([nameMatch, descriptionMatch]);
+  });
+  it("matches accented multiword queries across catalogue text", () => {
+    expect(
+      matchesSearch("Café on the Vice City beach", "cafe vice beach"),
+    ).toBe(true);
+    expect(matchesSearch("Café on the Vice City beach", "cafe port")).toBe(
+      false,
+    );
+  });
+  it("intersects category favorites and collection membership", () => {
     const collection = {
-      id: 'collection:1',
-      name: 'Trip',
-      placeIds: ['L1'],
-      createdAt: '',
-      updatedAt: '',
+      id: "collection:1",
+      name: "Trip",
+      placeIds: ["L1"],
+      createdAt: "",
+      updatedAt: "",
     };
     expect(
       filterPlaces(
         [place],
         { ...filters, favoritesOnly: true, collectionId: collection.id },
-        ['L1'],
+        ["L1"],
         [],
         [collection],
       ),
@@ -64,32 +99,38 @@ describe('composable catalogue filters', () => {
       ),
     ).toHaveLength(0);
     expect(
-      filterPlaces([place], { ...filters, category: 'nature' }, ['L1'], [], [collection]),
+      filterPlaces(
+        [place],
+        { ...filters, category: "nature" },
+        ["L1"],
+        [],
+        [collection],
+      ),
     ).toHaveLength(0);
   });
 });
-describe('internal module registry', () => {
-  it('rejects duplicate registration and unregisters without disturbing other modules', () => {
+describe("internal module registry", () => {
+  it("rejects duplicate registration and unregisters without disturbing other modules", () => {
     const registry = createRegistry();
-    const action = { id: 'test', title: 'Test', run: vi.fn() };
+    const action = { id: "test", title: "Test", run: vi.fn() };
     const dispose = registry.registerAction(action);
     expect(() => registry.registerAction(action)).toThrow(/duplicate/i);
-    registry.actions.get('test')?.run();
+    registry.actions.get("test")?.run();
     expect(action.run).toHaveBeenCalledOnce();
     dispose();
     expect(registry.actions.size).toBe(0);
   });
-  it('isolates event listener failures and supports unsubscribe', () => {
+  it("isolates event listener failures and supports unsubscribe", () => {
     const registry = createRegistry();
     const seen = vi.fn();
-    registry.on('selection', () => {
-      throw new Error('plugin failed');
+    registry.on("selection", () => {
+      throw new Error("plugin failed");
     });
-    const dispose = registry.on('selection', seen);
-    expect(() => registry.emit('selection', 'L1')).not.toThrow();
-    expect(seen).toHaveBeenCalledWith('L1');
+    const dispose = registry.on("selection", seen);
+    expect(() => registry.emit("selection", "L1")).not.toThrow();
+    expect(seen).toHaveBeenCalledWith("L1");
     dispose();
-    registry.emit('selection', 'L2');
+    registry.emit("selection", "L2");
     expect(seen).toHaveBeenCalledOnce();
   });
 });

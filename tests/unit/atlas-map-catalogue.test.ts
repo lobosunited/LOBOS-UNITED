@@ -23,6 +23,27 @@ describe('Atlas searchable catalogue', () => {
     expect(places.find(p => p.id === 'L1')).toMatchObject({ evidence: 'uncertain', layerId: 'uncertain' });
     expect(places.find(p => p.id === 'region:vice-city')).toMatchObject({ title: 'Vice City', evidence: 'approximate' });
   });
+  it('preserves all six approximate regional pins in the shared map coordinate frame', () => {
+    const places = catalogueFromSnapshot(snapshot);
+    const expected = {
+      'region:vice-city': { x: -424.9069999999997, y: -325.61 },
+      'region:leonida-keys': { x: -4915.480985674199, y: -3338.6224041633122 },
+      'region:grassrivers': { x: -3548.973455306624, y: -3592.623227653312 },
+      'region:port-gellhorn': { x: -6240.705097588649, y: 4560.714992493181 },
+      'region:ambrosia': { x: -2966.5107043822245, y: 3386.662355484881 },
+      'region:mount-kalaga-national-park': { x: -3471.9823036223092, y: 6428.146163637521 },
+    };
+    for (const [id, position] of Object.entries(expected))
+      expect(places.find((place) => place.id === id)?.position).toEqual(position);
+  });
+  it('uses the synced snapshot revision in community source attribution', () => {
+    const revision = 'a123456789012345678901234567890123456789';
+    const places = catalogueFromSnapshot({ ...snapshot, source: { revision } });
+    expect(places.find(place => place.id === snapshot.landmarks[0].id)?.source.title)
+      .toContain(`revision ${revision.slice(0, 7)}`);
+    expect(() => catalogueFromSnapshot({ ...snapshot, source: { revision: 'invalid' } }))
+      .toThrow(/revision/i);
+  });
   it('rejects malformed or duplicate source records instead of manufacturing empty data', () => {
     expect(() => catalogueFromSnapshot({ landmarks: null })).toThrow();
     expect(() => catalogueFromSnapshot({ ...snapshot, landmarks: [snapshot.landmarks[0], snapshot.landmarks[0]] })).toThrow(/duplicate/i);

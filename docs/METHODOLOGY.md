@@ -19,7 +19,7 @@ all 2,198 previous identifiers. It adds 1,233 records, with 3,340 positioned and
 coordinate frame and provenance. Existing saved places still refer to the same
 IDs. A public map position may move when the source record changes.
 
-The app keeps the established GTADB-derived coordinate frame aligned between the 2D map and the 3D explorer.
+The app uses the established GTADB-derived coordinate frame in the interactive map.
 
 ## Uncertainty labels
 

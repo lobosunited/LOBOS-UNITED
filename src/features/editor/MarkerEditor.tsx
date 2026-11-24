@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Category, PersonalMarker, Position } from '../../domain/types';
 import { atlasRepository, ConflictError } from '../../db/repository';
 import { markerToPlace } from '../../data/catalogue';
-import { saveLocal, useMapStore, useUiStore, useUserStore } from '../../stores/atlas';
+import { saveLocal, useDomainStore, useMapStore, useUiStore, useUserStore } from '../../stores/atlas';
 import { Modal } from '../../app/Modal';
 import { CATEGORIES } from '../../app/Sidebar';
 
@@ -15,6 +15,8 @@ export default function MarkerEditor({
 }) {
   const selectedId = useMapStore((s) => s.selectedId);
   const mode = useMapStore((s) => s.editorMode);
+  const publicPlaces = useDomainStore((s) => s.places);
+  const localMarkers = useUserStore((s) => s.markers);
   const existing = useUserStore((s) => s.markers.find((marker) => marker.id === selectedId));
   const [marker] = useState(mode === 'create' ? undefined : existing);
   const [title, setTitle] = useState(marker?.title ?? '');
@@ -24,12 +26,28 @@ export default function MarkerEditor({
   const [x, setX] = useState(String(position?.x ?? marker?.position.x ?? 0));
   const [y, setY] = useState(String(position?.y ?? marker?.position.y ?? 0));
   const [error, setError] = useState('');
+  const [duplicateReview, setDuplicateReview] = useState(false);
+  const [allowNearbyDuplicate, setAllowNearbyDuplicate] = useState(false);
+  const nearbyPlaces = useMemo(() => {
+    const px = Number(x);
+    const py = Number(y);
+    if (!Number.isFinite(px) || !Number.isFinite(py)) return [];
+    return [...publicPlaces, ...localMarkers.map(markerToPlace)]
+      .filter((place) => place.id !== marker?.id && place.position)
+      .map((place) => ({
+        place,
+        distance: Math.hypot(place.position!.x - px, place.position!.y - py),
+      }))
+      .filter(({ distance }) => distance <= 120)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 4);
+  }, [x, y, publicPlaces, localMarkers, marker?.id]);
   const [noteUpdatedAt] = useState(
     () => useUserStore.getState().notes.find((note) => note.placeId === selectedId)?.updatedAt ?? null,
   );
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
-  async function save() {
+  async function save(saveSeparate = false) {
     const coords = { x: Number(x), y: Number(y) };
     if (
       !title.trim() ||
@@ -43,6 +61,11 @@ export default function MarkerEditor({
       coords.y > 12000
     ) {
       setError('Enter a title and coordinates within the map: X −16000 to 4000; Y −8000 to 12000.');
+      return;
+    }
+    if (nearbyPlaces.length > 0 && !allowNearbyDuplicate && !saveSeparate) {
+      setDuplicateReview(true);
+      setError('There are existing map entries within 120 map units. Review them before adding another marker.');
       return;
     }
     const now = new Date().toISOString();
@@ -188,6 +211,37 @@ export default function MarkerEditor({
             />
           </div>
         </div>
+        {duplicateReview && nearbyPlaces.length > 0 && (
+          <section className="duplicate-review" aria-label="Nearby map entries" aria-live="polite">
+            <strong>Nearby map entries</strong>
+            <p>These are possible matches, not confirmed duplicates. Open one to inspect it or keep yours as a separate personal marker.</p>
+            {nearbyPlaces.map(({ place, distance }) => (
+              <button
+                type="button"
+                className="duplicate-review-row"
+                key={place.id}
+                onClick={() => {
+                  useMapStore.getState().select(place);
+                  onClose();
+                }}
+              >
+                <span>{place.title}</span>
+                <small>{Math.round(distance)} map units away · {place.source.title}</small>
+              </button>
+            ))}
+            <button
+              type="button"
+              className="button primary"
+              disabled={busy}
+              onClick={() => {
+                setAllowNearbyDuplicate(true);
+                void save(true);
+              }}
+            >
+              Save as a separate marker
+            </button>
+          </section>
+        )}
         {error && (
           <p className="inline-error" role="alert">
             {error}

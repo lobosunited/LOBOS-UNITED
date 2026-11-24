@@ -14,6 +14,7 @@ import { parseBackup } from '../db/backup';
 export const DEFAULT_FILTERS: Filters = {
   query: '',
   category: 'all',
+  categoryTags: [],
   favoritesOnly: false,
   personalOnly: false,
   evidence: 'all',
