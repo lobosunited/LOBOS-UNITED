@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-27T07:31:05.787Z",
+  "source": "rolux/gtadb.org",
+  "upstreamRevision": "ceaecbdba52bce3abcd6d3ebe4738fb2798c1b64",
+  "sha256": "f8fe6d38f5d42ee7dee827b7e04a59e71f742ec71dd858eff7fc6884565801b2",
+  "records": 4615,
+  "positioned": 4525,
+  "unpositioned": 90,
+  "license": "CC BY 4.0",
+  "sourceUrl": "https://map.gtadb.org"
+}
